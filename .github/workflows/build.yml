@@ -7,29 +7,40 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+
       - name: Найти проект (папка или zip в корне репозитория)
         run: |
-          for z in *.zip; do [ -f "$z" ] && unzip -oq "$z" -d _unpacked; done
+          for z in *.zip; do if [ -f "$z" ]; then unzip -oq "$z" -d _unpacked; fi; done
           F=$(find . -name settings.gradle.kts -not -path './.git/*' | head -1)
-          [ -n "$F" ] || { echo "settings.gradle.kts не найден"; exit 1; }
+          if [ -z "$F" ]; then echo "settings.gradle.kts не найден"; exit 1; fi
           echo "PROJECT=$(dirname "$F")" >> "$GITHUB_ENV"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-             - name: Принять лицензии Android SDK
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Подготовить Android SDK (на сервере он уже установлен)
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" > /dev/null || true
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
+
       - name: Сборка
         run: cd "$PROJECT" && gradle assembleDebug --no-daemon --stacktrace
+
       - uses: actions/upload-artifact@v4
         with:
           name: HeartopiaAutoDraw-debug-apk
           path: ${{ env.PROJECT }}/app/build/outputs/apk/debug/app-debug.apk
+
       - name: Опубликовать APK в Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
